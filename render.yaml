@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: volatility-forecasting-api
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --app-dir src --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: FIT_API_KEY
+        sync: false

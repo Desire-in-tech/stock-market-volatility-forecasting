@@ -17,7 +17,11 @@ import sqlite3
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from sqlalchemy import create_engine, text
+
+
+def _quote_identifier(identifier: str) -> str:
+    """Return a SQLite-safe quoted identifier."""
+    return '"' + identifier.replace('"', '""') + '"'
 
 
 # ---------------------------------------------------------------------------
@@ -167,15 +171,21 @@ class SQLRepository:
         """
         if limit:
             query = (
-                f"SELECT * FROM '{table_name}' "
-                f"ORDER BY Date DESC LIMIT {limit}"
+                f"SELECT * FROM {_quote_identifier(table_name)} "
+                "ORDER BY Date DESC LIMIT ?"
             )
+            params = (limit,)
         else:
-            query = f"SELECT * FROM '{table_name}' ORDER BY Date ASC"
+            query = (
+                f"SELECT * FROM {_quote_identifier(table_name)} "
+                "ORDER BY Date ASC"
+            )
+            params = None
 
         df = pd.read_sql(
             query,
             con=self.connection,
+            params=params,
             index_col="Date",
             parse_dates=["Date"],
         )
@@ -184,11 +194,8 @@ class SQLRepository:
 
     def table_exists(self, table_name: str) -> bool:
         """Return True if *table_name* exists in the database."""
-        query = (
-            "SELECT name FROM sqlite_master "
-            f"WHERE type='table' AND name='{table_name}'"
-        )
-        result = pd.read_sql(query, con=self.connection)
+        query = "SELECT name FROM sqlite_master WHERE type='table' AND name=?"
+        result = pd.read_sql(query, con=self.connection, params=(table_name,))
         return not result.empty
 
 

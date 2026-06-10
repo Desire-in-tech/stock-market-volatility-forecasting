@@ -11,20 +11,21 @@ POST /fit             Fetch data → fit GARCH → save model.
 POST /predict         Load latest model → forecast volatility.
 """
 
-import glob
 import os
 import sqlite3
 from datetime import datetime
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from fastapi import Depends, FastAPI, Header, HTTPException
+from pydantic import BaseModel, Field, field_validator
 
 # Resolve paths relative to this file so the server works from any cwd
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
 _DB_PATH = os.path.join(_ROOT, "database", "stock_data.db")
 _MODELS_DIR = os.path.join(_ROOT, "models")
+_FIT_API_KEY = os.getenv("FIT_API_KEY")
+_DEFAULT_LOOKBACK_DAYS = 365 * 5
 
 # ---------------------------------------------------------------------------
 # Lazy imports — heavy ML deps only loaded when a request comes in
@@ -44,6 +45,58 @@ def _get_api():
 def _get_model(ticker: str, repo=None):
     from model import GarchModel  # noqa: PLC0415
     return GarchModel(ticker=ticker, repo=repo)
+
+
+def _require_fit_api_key(x_api_key: str | None = Header(default=None)) -> None:
+    """Protect the expensive training endpoint when FIT_API_KEY is configured."""
+    if _FIT_API_KEY and x_api_key != _FIT_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key.")
+
+
+def _fit_garch(
+    ticker: str,
+    start_date: str,
+    end_date: str,
+    n_observations: int,
+    p: int,
+    q: int,
+    persist: bool,
+) -> tuple[Any, str | None]:
+    """Fetch data, train a GARCH model, and optionally persist data/model files."""
+    api = _get_api()
+    df = api.get_daily_data(ticker=ticker, start=start_date, end=end_date)
+
+    repo = None
+    if persist:
+        repo = _get_repo()
+        repo.insert_table(table_name=ticker, records=df, if_exists="replace")
+    else:
+        repo = _get_in_memory_repo(ticker=ticker, records=df)
+
+    model = _get_model(ticker=ticker, repo=repo)
+    model.wrangle_data(n_observations=n_observations)
+    model.fit(p=p, q=q)
+
+    model_path = None
+    if persist:
+        from model import GarchModel  # noqa: PLC0415
+        model_path = GarchModel.build_model_path(
+            ticker=ticker,
+            models_dir=_MODELS_DIR,
+        )
+        model.dump(model_path)
+
+    return model, model_path
+
+
+def _get_in_memory_repo(ticker: str, records: Any):
+    """Build a temporary repository for stateless model training."""
+    from data import SQLRepository  # noqa: PLC0415
+
+    conn = sqlite3.connect(":memory:")
+    repo = SQLRepository(connection=conn)
+    repo.insert_table(table_name=ticker, records=records, if_exists="replace")
+    return repo
 
 
 # ---------------------------------------------------------------------------
@@ -81,24 +134,45 @@ def hello() -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 class FitIn(BaseModel):
-    ticker: str
-    start_date: str
-    end_date: str
-    n_observations: int = 2500
-    p: int = 1
-    q: int = 1
+    ticker: str = Field(..., min_length=1, max_length=20)
+    start_date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
+    end_date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
+    n_observations: int = Field(default=2500, ge=30, le=5000)
+    p: int = Field(default=1, ge=1, le=5)
+    q: int = Field(default=1, ge=1, le=5)
+    persist: bool = False
+
+    @field_validator("ticker")
+    @classmethod
+    def validate_ticker(cls, value: str) -> str:
+        cleaned = value.strip().upper()
+        allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_^")
+        if any(char not in allowed for char in cleaned):
+            raise ValueError("Ticker contains unsupported characters.")
+        return cleaned
+
+    @field_validator("end_date")
+    @classmethod
+    def validate_date_order(cls, value: str, info):
+        start_date = info.data.get("start_date")
+        if start_date and value <= start_date:
+            raise ValueError("end_date must be after start_date.")
+        return value
 
 
 class FitOut(FitIn):
     success: bool
     message: str
-    model_path: str
+    model_path: str | None
     aic: float
     bic: float
 
 
 @app.post("/fit", response_model=FitOut, summary="Fit a GARCH model")
-def fit_model(request: FitIn) -> FitOut:
+def fit_model(
+    request: FitIn,
+    _: None = Depends(_require_fit_api_key),
+) -> FitOut:
     """
     Fetch data for *ticker* from Yahoo Finance, store it in SQLite,
     fit a GARCH(p, q) model, and persist the result to disk.
@@ -115,39 +189,24 @@ def fit_model(request: FitIn) -> FitOut:
         }
     """
     try:
-        # 1. Fetch raw data from Yahoo Finance
-        api = _get_api()
-        df = api.get_daily_data(
+        model, model_path = _fit_garch(
             ticker=request.ticker,
-            start=request.start_date,
-            end=request.end_date,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            n_observations=request.n_observations,
+            p=request.p,
+            q=request.q,
+            persist=request.persist,
         )
-
-        # 2. Persist to SQLite (replace if already stored)
-        repo = _get_repo()
-        repo.insert_table(
-            table_name=request.ticker,
-            records=df,
-            if_exists="replace",
-        )
-
-        # 3. Build and fit the GARCH model
-        model = _get_model(ticker=request.ticker, repo=repo)
-        model.wrangle_data(n_observations=request.n_observations)
-        model.fit(p=request.p, q=request.q)
-
-        # 4. Save model to disk with a datestamped filename
-        from model import GarchModel  # noqa: PLC0415
-        model_path = GarchModel.build_model_path(
-            ticker=request.ticker,
-            models_dir=_MODELS_DIR,
-        )
-        model.dump(model_path)
 
         return FitOut(
             **request.model_dump(),
             success=True,
-            message=f"Model fitted and saved for {request.ticker}.",
+            message=(
+                f"Model fitted for {request.ticker}."
+                if not model_path
+                else f"Model fitted and saved for {request.ticker}."
+            ),
             model_path=model_path,
             aic=round(model.aic, 4),
             bic=round(model.bic, 4),
@@ -162,13 +221,36 @@ def fit_model(request: FitIn) -> FitOut:
 # ---------------------------------------------------------------------------
 
 class PredictIn(BaseModel):
-    ticker: str
-    n_days: int = 5
+    ticker: str = Field(..., min_length=1, max_length=20)
+    n_days: int = Field(default=5, ge=1, le=30)
+    start_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    end_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    n_observations: int = Field(default=1250, ge=30, le=5000)
+    p: int = Field(default=1, ge=1, le=5)
+    q: int = Field(default=1, ge=1, le=5)
+
+    @field_validator("ticker")
+    @classmethod
+    def validate_ticker(cls, value: str) -> str:
+        cleaned = value.strip().upper()
+        allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_^")
+        if any(char not in allowed for char in cleaned):
+            raise ValueError("Ticker contains unsupported characters.")
+        return cleaned
+
+    @field_validator("end_date")
+    @classmethod
+    def validate_date_order(cls, value: str | None, info):
+        start_date = info.data.get("start_date")
+        if value and start_date and value <= start_date:
+            raise ValueError("end_date must be after start_date.")
+        return value
 
 
 class PredictOut(PredictIn):
     success: bool
-    model_path: str
+    model_path: str | None
+    model_source: str
     forecast: dict[str, float]
 
 
@@ -189,24 +271,26 @@ def predict_volatility(request: PredictIn) -> PredictOut:
     to annualised volatility values (in %).
     """
     try:
-        # Find the most recent model file for this ticker
-        pattern = os.path.join(
-            _MODELS_DIR,
-            f"{request.ticker.replace('/', '-')}_*.pkl",
-        )
-        candidates = sorted(glob.glob(pattern))
+        latest_model_path = _latest_model_path(request.ticker)
 
-        if not candidates:
-            raise FileNotFoundError(
-                f"No saved model found for ticker '{request.ticker}'. "
-                "Call /fit first."
+        if latest_model_path:
+            model = _get_model(ticker=request.ticker)
+            model.load(latest_model_path)
+            model_source = "saved_model"
+        else:
+            end_date = request.end_date or datetime.utcnow().date().isoformat()
+            start_date = request.start_date or _default_start_date(end_date)
+            model, latest_model_path = _fit_garch(
+                ticker=request.ticker,
+                start_date=start_date,
+                end_date=end_date,
+                n_observations=request.n_observations,
+                p=request.p,
+                q=request.q,
+                persist=False,
             )
+            model_source = "trained_on_demand"
 
-        latest_model_path = candidates[-1]
-
-        # Load and forecast
-        model = _get_model(ticker=request.ticker)
-        model.load(latest_model_path)
         vol_series = model.predict_volatility(horizon=request.n_days)
 
         forecast = {
@@ -218,10 +302,24 @@ def predict_volatility(request: PredictIn) -> PredictOut:
             **request.model_dump(),
             success=True,
             model_path=latest_model_path,
+            model_source=model_source,
             forecast=forecast,
         )
 
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _latest_model_path(ticker: str) -> str | None:
+    import glob
+
+    pattern = os.path.join(_MODELS_DIR, f"{ticker.replace('/', '-')}_*.pkl")
+    candidates = sorted(glob.glob(pattern))
+    return candidates[-1] if candidates else None
+
+
+def _default_start_date(end_date: str) -> str:
+    from datetime import date, timedelta
+
+    end = date.fromisoformat(end_date)
+    return (end - timedelta(days=_DEFAULT_LOOKBACK_DAYS)).isoformat()
