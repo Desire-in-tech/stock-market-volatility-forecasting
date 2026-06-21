@@ -27,9 +27,7 @@ _MODELS_DIR = os.path.join(_ROOT, "models")
 _FIT_API_KEY = os.getenv("FIT_API_KEY")
 _DEFAULT_LOOKBACK_DAYS = 365 * 5
 
-# ---------------------------------------------------------------------------
 # Lazy imports — heavy ML deps only loaded when a request comes in
-# ---------------------------------------------------------------------------
 
 def _get_repo():
     from data import SQLRepository  # noqa: PLC0415
@@ -99,9 +97,7 @@ def _get_in_memory_repo(ticker: str, records: Any):
     return repo
 
 
-# ---------------------------------------------------------------------------
 # FastAPI app
-# ---------------------------------------------------------------------------
 
 app = FastAPI(
     title="BSE Volatility Forecasting API",
@@ -116,9 +112,7 @@ os.makedirs(_MODELS_DIR, exist_ok=True)
 os.makedirs(os.path.dirname(_DB_PATH), exist_ok=True)
 
 
-# ---------------------------------------------------------------------------
 # /hello
-# ---------------------------------------------------------------------------
 
 @app.get("/hello", summary="Health check")
 def hello() -> dict[str, str]:
@@ -129,9 +123,7 @@ def hello() -> dict[str, str]:
     }
 
 
-# ---------------------------------------------------------------------------
 # /fit
-# ---------------------------------------------------------------------------
 
 class FitIn(BaseModel):
     ticker: str = Field(..., min_length=1, max_length=20)
@@ -216,9 +208,7 @@ def fit_model(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-# ---------------------------------------------------------------------------
 # /predict
-# ---------------------------------------------------------------------------
 
 class PredictIn(BaseModel):
     ticker: str = Field(..., min_length=1, max_length=20)
