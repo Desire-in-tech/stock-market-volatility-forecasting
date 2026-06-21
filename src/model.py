@@ -74,10 +74,8 @@ class GarchModel:
         self.aic: float | None = None
         self.bic: float | None = None
 
-    # ------------------------------------------------------------------
     # Data preparation
-    # ------------------------------------------------------------------
-
+    
     def wrangle_data(self, n_observations: int = 2500) -> "GarchModel":
         """
         Load returns from the repository and attach them to ``self.data``.
@@ -116,10 +114,8 @@ class GarchModel:
         self.data = df["returns"]
         return self
 
-    # ------------------------------------------------------------------
     # Model fitting
-    # ------------------------------------------------------------------
-
+    
     def fit(self, p: int = 1, q: int = 1) -> "GarchModel":
         """
         Fit a GARCH(p, q) model to ``self.data``.
@@ -157,10 +153,8 @@ class GarchModel:
         self.bic = self.model_fit.bic
         return self
 
-    # ------------------------------------------------------------------
     # Forecasting
-    # ------------------------------------------------------------------
-
+    
     def predict_volatility(self, horizon: int = 5) -> pd.Series:
         """
         Produce an annualised volatility forecast.
@@ -193,10 +187,8 @@ class GarchModel:
         volatility_forecast = np.sqrt(variance_forecast) * np.sqrt(252)
         return volatility_forecast
 
-    # ------------------------------------------------------------------
     # Persistence
-    # ------------------------------------------------------------------
-
+    
     def dump(self, filepath: str) -> str:
         """
         Serialise the fitted model to ``filepath`` using joblib.
@@ -237,10 +229,8 @@ class GarchModel:
         self.model_fit = joblib.load(filepath)
         return self
 
-    # ------------------------------------------------------------------
     # Helpers
-    # ------------------------------------------------------------------
-
+    
     @staticmethod
     def build_model_path(ticker: str, models_dir: str = "models") -> str:
         """
