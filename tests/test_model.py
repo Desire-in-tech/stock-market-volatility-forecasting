@@ -20,9 +20,7 @@ from data import SQLRepository
 from model import GarchModel
 
 
-# ---------------------------------------------------------------------------
 # Fixtures
-# ---------------------------------------------------------------------------
 
 @pytest.fixture
 def sample_returns() -> pd.Series:
@@ -64,9 +62,7 @@ def fitted_model(repo_with_returns):
     return gm
 
 
-# ---------------------------------------------------------------------------
 # wrangle_data
-# ---------------------------------------------------------------------------
 
 class TestWrangleData:
     def test_sets_data_attribute(self, repo_with_returns):
@@ -90,9 +86,7 @@ class TestWrangleData:
             gm.wrangle_data()
 
 
-# ---------------------------------------------------------------------------
 # fit
-# ---------------------------------------------------------------------------
 
 class TestFit:
     def test_sets_model_fit(self, fitted_model):
@@ -112,9 +106,7 @@ class TestFit:
             gm.fit()
 
 
-# ---------------------------------------------------------------------------
 # predict_volatility
-# ---------------------------------------------------------------------------
 
 class TestPredictVolatility:
     def test_returns_series(self, fitted_model):
@@ -137,9 +129,7 @@ class TestPredictVolatility:
             gm.predict_volatility()
 
 
-# ---------------------------------------------------------------------------
 # dump / load
-# ---------------------------------------------------------------------------
 
 class TestDumpLoad:
     def test_dump_creates_file(self, fitted_model, tmp_path):
@@ -165,9 +155,7 @@ class TestDumpLoad:
         assert len(vol) == 3
 
 
-# ---------------------------------------------------------------------------
 # build_model_path
-# ---------------------------------------------------------------------------
 
 class TestBuildModelPath:
     def test_returns_string(self):
