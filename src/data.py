@@ -24,9 +24,7 @@ def _quote_identifier(identifier: str) -> str:
     return '"' + identifier.replace('"', '""') + '"'
 
 
-# ---------------------------------------------------------------------------
 # Yahoo Finance API wrapper
-# ---------------------------------------------------------------------------
 
 class YFinanceAPI:
     """Fetch and clean daily stock data from Yahoo Finance."""
@@ -89,9 +87,7 @@ class YFinanceAPI:
         return df
 
 
-# ---------------------------------------------------------------------------
 # SQLite repository
-# ---------------------------------------------------------------------------
 
 class SQLRepository:
     """
@@ -106,10 +102,8 @@ class SQLRepository:
     def __init__(self, connection):
         self.connection = connection
 
-    # ------------------------------------------------------------------
     # Write
-    # ------------------------------------------------------------------
-
+    
     def insert_table(
         self,
         table_name: str,
@@ -145,10 +139,8 @@ class SQLRepository:
             "records_inserted": n_inserted or len(records),
         }
 
-    # ------------------------------------------------------------------
     # Read
-    # ------------------------------------------------------------------
-
+    
     def read_table(
         self,
         table_name: str,
@@ -199,9 +191,7 @@ class SQLRepository:
         return not result.empty
 
 
-# ---------------------------------------------------------------------------
 # Convenience helper used directly in notebooks
-# ---------------------------------------------------------------------------
 
 def get_stock_data(ticker: str, start: str, end: str) -> pd.DataFrame:
     """
