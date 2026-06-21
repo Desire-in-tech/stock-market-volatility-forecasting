@@ -18,9 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from data import YFinanceAPI, SQLRepository, get_stock_data
 
 
-# ---------------------------------------------------------------------------
 # YFinanceAPI
-# ---------------------------------------------------------------------------
 
 class TestYFinanceAPI:
     """Tests for YFinanceAPI.get_daily_data()."""
@@ -56,9 +54,7 @@ class TestYFinanceAPI:
             )
 
 
-# ---------------------------------------------------------------------------
 # SQLRepository
-# ---------------------------------------------------------------------------
 
 class TestSQLRepository:
     """Tests for SQLRepository using an in-memory SQLite database."""
@@ -112,9 +108,7 @@ class TestSQLRepository:
         assert repo_with_data.table_exists("NONEXISTENT") is False
 
 
-# ---------------------------------------------------------------------------
 # get_stock_data convenience function
-# ---------------------------------------------------------------------------
 
 class TestGetStockData:
     def test_returns_dataframe(self):
